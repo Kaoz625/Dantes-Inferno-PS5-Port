@@ -1,6 +1,7 @@
 #include "overlay_style.h"
 
 #include <rex/logging/macros.h>
+#include <rex/platform.h>
 #include <rex/ui/window.h>
 
 #include <algorithm>
@@ -42,6 +43,11 @@ std::filesystem::path FindFontFile(int weight) {
       {"segoeuib.ttf", "arialbd.ttf"},
   };
   for (const char* name : kWindows[weight]) candidates.push_back(fonts / name);
+#elif REX_PLATFORM_PS5
+  // PS5: no system fonts; the title ships DejaVu (free licence) in /app0/fonts.
+  static constexpr const char* kPs5[3] = {"/app0/fonts/DejaVuSans.ttf", "/app0/fonts/DejaVuSans-Bold.ttf",
+                                          "/app0/fonts/DejaVuSans-Bold.ttf"};
+  candidates.push_back(kPs5[weight]);
 #else
   static constexpr const char* kLinux[3][4] = {
       {"/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",

@@ -27,6 +27,16 @@
 #include "launcher/menu.h"
 #include "renderer/renderer.h"
 #include "renderer/renderer_config.h"
+#include "renderer/ui_overlay.h"
+#endif
+#if HELLS_GATE_PS5_NATIVE_GAME && defined(DANTESINFERNO_DEV_CHEATS)
+#include "cheats/cheats.h"
+#include "overlay/cheat_menu.h"
+#include "overlay/overlay_style.h"
+
+#include <rex/input/input_system.h>
+#include <rex/ui/imgui_drawer.h>
+#include <rex/ui/presenter.h>
 #endif
 
 extern "C" [[noreturn]] void catchReturnFromMain(int status);
@@ -355,11 +365,96 @@ class HellsGateApp final : public rex::ReXApp {
       catchReturnFromMain(1);
     }
     title_note("native game: renderer ready");
+#if defined(DANTESINFERNO_DEV_CHEATS)
+    StartCheatMenu();
+#endif
   }
 
   void OnShutdown() override {
+#if defined(DANTESINFERNO_DEV_CHEATS)
+    cheats::SetOpenRequestHandler(nullptr);
+    renderer::SetOverlayFrameRequest(nullptr);
+    cheat_menu_.reset();
+#endif
     renderer::Stop();
+#if defined(DANTESINFERNO_DEV_CHEATS)
+    menu_drawer_.reset();
+    overlay_drawer_.reset();
+#endif
   }
+
+#if defined(DANTESINFERNO_DEV_CHEATS)
+  // Cheat menu (L3+R3 held 0.25 s, seen in the game's pad read in cheats/cheat_hooks.cpp). The SDK
+  // presenter is detached here (SyncOnlyGraphics), so there is no SDK ImGui drawer: ImGui records on
+  // the UI thread into OverlayDrawer and the Diligent renderer draws the latest frame over every
+  // presented image, as the desktop renderer=dante path does. Choices are kept in
+  // <user data>/cheats.toml.
+  void StartCheatMenu() {
+    cheats::Load(user_data_root());
+    overlay_drawer_ = std::make_unique<renderer::OverlayDrawer>();
+    rex::ui::ImGuiDrawer* drawer = imgui_drawer();
+    if (!drawer) {
+      menu_drawer_ = std::make_unique<rex::ui::ImGuiDrawer>(
+          window(), 64, [this](ImFontAtlas* atlas) { overlay::LoadFonts(atlas, window()); });
+      drawer = menu_drawer_.get();
+    }
+    drawer->SetPresenterAndImmediateDrawer(nullptr, overlay_drawer_.get());
+    renderer::SetOverlayFrameRequest([this] {
+      if (overlay_frame_pending_.exchange(true)) return;
+      app_context().CallInUIThread([this] {
+        overlay_frame_pending_ = false;
+        DrawOverlayFrame();
+      });
+    });
+    cheats::SetOpenRequestHandler(
+        [this] { app_context().CallInUIThread([this] { OpenCheatMenu(); }); });
+    title_note("cheats: menu ready (L3+R3)");
+  }
+
+  rex::ui::ImGuiDrawer* MenuDrawer() {
+    return menu_drawer_ ? menu_drawer_.get() : imgui_drawer();
+  }
+
+  // UI thread.
+  void OpenCheatMenu() {
+    auto* drawer = MenuDrawer();
+    if (cheat_menu_ || !drawer || !runtime()) return;
+    auto* input = static_cast<rex::input::InputSystem*>(runtime()->input_system());
+    auto pad = [input](uint16_t& buttons, int16_t& stick_y) {
+      rex::input::X_INPUT_STATE state = {};
+      if (!input || input->GetState(0, &state) != 0) return false;
+      buttons = state.gamepad.buttons;
+      stick_y = state.gamepad.thumb_ly;
+      return true;
+    };
+    cheat_menu_ = std::make_unique<overlay::CheatMenu>(drawer, pad, [this] {
+      app_context().CallInUIThread([this] {
+        cheat_menu_.reset();
+        title_note("cheats: menu closed");
+      });
+    });
+    title_note("cheats: menu open");
+    REXLOG_INFO("CHEATS: menu open");
+  }
+
+  // UI thread, after each presented frame.
+  void DrawOverlayFrame() {
+    auto* drawer = MenuDrawer();
+    if (!overlay_drawer_ || !drawer || !window()) return;
+    if (!drawer->HasDialogs()) {
+      overlay_drawer_->PublishEmpty();
+      return;
+    }
+    rex::ui::AppUIDrawContext context(window()->GetActualPhysicalWidth(),
+                                      window()->GetActualPhysicalHeight());
+    drawer->Draw(context);
+  }
+
+  std::unique_ptr<renderer::OverlayDrawer> overlay_drawer_;
+  std::unique_ptr<rex::ui::ImGuiDrawer> menu_drawer_;
+  std::unique_ptr<overlay::CheatMenu> cheat_menu_;
+  std::atomic<bool> overlay_frame_pending_{false};
+#endif
 
   const hells_gate::ps5::RenderMode* render_mode_ = &hells_gate::ps5::k1440p;
 #endif

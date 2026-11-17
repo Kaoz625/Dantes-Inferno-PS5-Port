@@ -125,9 +125,13 @@ fi
 if [[ ! -d $template ]]; then
     git clone --no-hardlinks "$PS5_REXGLUE_TEMPLATE" "$template"
 fi
-git -C "$template" cat-file -e c91ff84b7f2cbe3884670fceed8dc924724e04cb^{commit}
-if [[ $(git -C "$template" rev-parse HEAD) != c91ff84b7f2cbe3884670fceed8dc924724e04cb ]]; then
-    git -C "$template" switch --detach c91ff84b7f2cbe3884670fceed8dc924724e04cb
+# KongaTime/PS5_ReXGlueTemplate is no longer on GitHub; the v1.2.1 build-source
+# archive has the c91ff84 tree as a snapshot. HELLS_GATE_TEMPLATE_PIN names the
+# local commit made from that snapshot.
+template_pin=${HELLS_GATE_TEMPLATE_PIN:-c91ff84b7f2cbe3884670fceed8dc924724e04cb}
+git -C "$template" cat-file -e "$template_pin^{commit}"
+if [[ $(git -C "$template" rev-parse HEAD) != $(git -C "$template" rev-parse "$template_pin^{commit}") ]]; then
+    git -C "$template" switch --detach "$template_pin"
 fi
 for dependency in PS5_PayloadSDK PS5_Mesa; do
     if [[ ! -e $build/$dependency ]]; then
@@ -144,8 +148,9 @@ cmake -S "$template" -B "$title_build" -G Ninja -DCMAKE_BUILD_TYPE=Release \
     -DTITLE_GAME="$title_game" -DHELLS_GATE_SMOKE="$smoke" -DHELLS_GATE_NATIVE_GAME="$native_game"
 cmake --build "$title_build" --target link
 if [[ $mode == native-smoke || $mode == native-game ]]; then
+    title_id=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["titleId"])' "$title_game/sce_sys/param.json")
     art="$title_game/title-art/sce_sys"
-    output="$template/dist/PPSA99343/sce_sys"
+    output="$template/dist/$title_id/sce_sys"
     icon="$art/icon0.png"
     [[ -f $icon ]] || icon="$root/ps5/sce_sys/icon0.png"
     cp "$icon" "$output/icon0.png"
@@ -154,7 +159,13 @@ if [[ $mode == native-smoke || $mode == native-game ]]; then
             cp "$art/$asset" "$output/$asset"
         fi
     done
+    if [[ $mode == native-game ]]; then
+        # Cheat menu font (overlay_style.cpp looks in /app0/fonts on the PS5). DejaVu: free licence.
+        fonts=${HELLS_GATE_FONT_DIR:-/usr/share/fonts/truetype/dejavu}
+        mkdir -p "$template/dist/$title_id/fonts"
+        cp "$fonts/DejaVuSans.ttf" "$fonts/DejaVuSans-Bold.ttf" "$template/dist/$title_id/fonts/"
+    fi
     if [[ $mode == native-game && -f $title_game/title-art/launcher.png ]]; then
-        cp "$title_game/title-art/launcher.png" "$template/dist/PPSA99343/launcher.png"
+        cp "$title_game/title-art/launcher.png" "$template/dist/$title_id/launcher.png"
     fi
 fi

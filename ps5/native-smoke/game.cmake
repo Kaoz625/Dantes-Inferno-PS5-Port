@@ -42,11 +42,17 @@ if(HELLS_GATE_NATIVE_GAME)
         "${renderer_dir}/renderdoc_capture.cpp"
         "${renderer_dir}/state_verifier.cpp"
         "${renderer_dir}/guest_gpu_state.cpp"
-        "${ps5_spirv}")
+        "${ps5_spirv}"
+        # Cheat menu (L3+R3): cheats, their hooks, the ImGui panel.
+        "${HELLS_GATE_ROOT}/src/damage_hooks.cpp"
+        "${HELLS_GATE_ROOT}/src/cheats/cheats.cpp"
+        "${HELLS_GATE_ROOT}/src/cheats/cheat_hooks.cpp"
+        "${HELLS_GATE_ROOT}/src/overlay/cheat_menu.cpp"
+        "${HELLS_GATE_ROOT}/src/overlay/overlay_style.cpp")
     include("${HELLS_GATE_ROOT}/cmake/EmbedGlyphIcons.cmake")
     hells_gate_embed_glyph_icons(hells_gate_app "${HELLS_GATE_ROOT}/assets/glyphs/kenney")
     set(native_target hells_gate_app)
-    target_compile_definitions(hells_gate_app PRIVATE HELLS_GATE_PS5_NATIVE_GAME=1)
+    target_compile_definitions(hells_gate_app PRIVATE HELLS_GATE_PS5_NATIVE_GAME=1 DANTESINFERNO_DEV_CHEATS=1)
     target_include_directories(hells_gate_app PRIVATE
         "${ROOT}/src"
         "${CMAKE_CURRENT_BINARY_DIR}"
